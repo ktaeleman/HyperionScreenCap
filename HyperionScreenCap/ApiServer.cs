@@ -136,6 +136,7 @@ namespace HyperionScreenCap
             ProcessStartInfo processStartInfo = new ProcessStartInfo
             {
                 FileName = "netsh.exe",
+                CreateNoWindow = true,
                 UseShellExecute = false,
                 Arguments = $"http show urlacl url={aclUrl}",
                 WindowStyle = ProcessWindowStyle.Hidden,
@@ -172,6 +173,7 @@ namespace HyperionScreenCap
             ProcessStartInfo processStartInfo = new ProcessStartInfo
             {
                 FileName = "netsh.exe",
+                CreateNoWindow = true,
                 UseShellExecute = true,
                 Arguments = $"http add urlacl url={aclUrl} user={user}",
                 WindowStyle = ProcessWindowStyle.Hidden,

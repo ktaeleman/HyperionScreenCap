@@ -5,6 +5,7 @@ using log4net;
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -14,7 +15,13 @@ namespace HyperionScreenCap
     {
         #region Variables
 
+        private static readonly int WM_QUERYENDSESSION = 0x11;
         private static readonly ILog LOG = LogManager.GetLogger(typeof(MainForm));
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool ShutdownBlockReasonCreate(IntPtr hWnd, [MarshalAs(UnmanagedType.LPWStr)] string reason);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool ShutdownBlockReasonDestroy(IntPtr hWnd);
 
         private ApiServer _apiServer;
         private NotifyIcon _trayIcon;
@@ -380,6 +387,18 @@ namespace HyperionScreenCap
                     SuspendCapture();
                     break;
             }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_QUERYENDSESSION && CaptureEnabled)
+            {
+                LOG.Info("System logoff, shutdown, or reboot (WM_QUERYENDSESSION) detected. Stopping capture.");
+                ShutdownBlockReasonCreate(this.Handle, "Stopping capture");
+                ToggleCapture(CaptureCommand.OFF, false, false);
+                ShutdownBlockReasonDestroy(this.Handle);
+            }
+            base.WndProc(ref m);
         }
 
         private void ResumeCapture()

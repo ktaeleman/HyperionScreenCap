@@ -28,7 +28,7 @@ namespace HyperionScreenCap
         public DX9ScreenCapture(int monitorIndex, int captureWidth, int captureHeight, int captureInterval)
         {
             _monitorIndex = monitorIndex;
-            CaptureWidth = captureHeight;
+            CaptureWidth = captureWidth;
             CaptureHeight = captureHeight;
             _captureInterval = captureInterval;
             _disposed = true;
