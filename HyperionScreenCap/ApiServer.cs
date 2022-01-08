@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Security.Principal;
 using Grapevine.Interfaces.Server;
 using Grapevine.Server;
 using Grapevine.Server.Attributes;
@@ -23,6 +25,13 @@ namespace HyperionScreenCap
         {
             try
             {
+                LOG.Info("Checking if ACL URL is reserved");
+                if (!IsAclUrlReserved(hostname, port))
+                {
+                    LOG.Info("ACL URL not reserved. Attempting to reserve.");
+                    ReserveAclUrl(hostname, port);
+                }
+
                 if ( _server == null )
                 {
                     LOG.Info($"Starting API server: {hostname}:{port}");
@@ -114,6 +123,63 @@ namespace HyperionScreenCap
             LOG.Info($"Sending response: {responseText}");
             context.Response.SendResponse(responseText);
             return context;
+        }
+
+        private string GetAclUrl(string hostname, string port)
+        {
+            return "http://" + hostname + ":" + port + "/";
+        }
+
+        private bool IsAclUrlReserved(string hostname, string port)
+        {
+            var aclUrl = GetAclUrl(hostname, port);
+            ProcessStartInfo processStartInfo = new ProcessStartInfo
+            {
+                FileName = "netsh.exe",
+                UseShellExecute = false,
+                Arguments = $"http show urlacl url={aclUrl}",
+                WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardOutput = true
+            };
+            LOG.Info($"Starting process: {processStartInfo.FileName} {processStartInfo.Arguments}");
+            var process = Process.Start(processStartInfo);
+            process.WaitForExit();
+            var output = process.StandardOutput.ReadToEnd();
+            /*
+             * Sample output:
+             *
+             * ACL URL Not Reserved:
+             * URL Reservations:
+             * -----------------
+             *
+             * ACL URL Reserved:
+             * URL Reservations:
+             * -----------------
+             *
+             * Reserved URL            : http://+:9191/
+             * User: DOMAIN\user
+             * Listen: Yes
+             * Delegate: No
+             * SDDL: D:(A;;GX;;;S-1-5-21-566402754-1856570991-3730105997-1001)
+             */
+            return output.Contains(aclUrl);
+        }
+
+        private void ReserveAclUrl(string hostname, string port)
+        {
+            var aclUrl = GetAclUrl(hostname, port);
+            var user = WindowsIdentity.GetCurrent().Name;
+            ProcessStartInfo processStartInfo = new ProcessStartInfo
+            {
+                FileName = "netsh.exe",
+                UseShellExecute = true,
+                Arguments = $"http add urlacl url={aclUrl} user={user}",
+                WindowStyle = ProcessWindowStyle.Hidden,
+                Verb = "runas",
+            };
+            LOG.Info($"Starting elevated process: {processStartInfo.FileName} {processStartInfo.Arguments}");
+            var process = Process.Start(processStartInfo);
+            process.WaitForExit();
         }
     }
 }

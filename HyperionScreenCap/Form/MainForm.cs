@@ -109,15 +109,13 @@ namespace HyperionScreenCap
                 ToggleCapture(CaptureCommand.ON);
             }
 
+            _apiServer?.StopServer(); // Always stop current server before starting again
             if ( SettingsManager.ApiEnabled )
             {
                 _apiServer = new ApiServer(this);
-                _apiServer.StartServer("localhost", SettingsManager.ApiPort.ToString());
+                _apiServer.StartServer("+", SettingsManager.ApiPort.ToString());
             }
-            else
-            {
-                _apiServer?.StopServer();
-            }
+
             _initLock = false;
             LOG.Info("Initialization lock unset");
         }

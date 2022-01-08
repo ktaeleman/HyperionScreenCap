@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Hyperion Screen Capture"
-#define MyAppVersion "2.7"
+#define MyAppVersion "2.8"
 #define MyAppPublisher "@sabaatworld"
 #define MyAppURL "https://github.com/sabaatworld/HyperionScreenCap"
 #define MyAppUpdatesURL "https://github.com/sabaatworld/HyperionScreenCap/releases"
@@ -67,8 +67,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 0,6.1
 
 [Files]
-Source: "..\bin\Release\HyperionScreenCap.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\bin\Release\HyperionScreenCap.exe.config"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\x86\Release\HyperionScreenCap.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\bin\x86\Release\HyperionScreenCap.exe.config"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
