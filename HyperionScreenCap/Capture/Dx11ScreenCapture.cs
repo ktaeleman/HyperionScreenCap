@@ -101,6 +101,48 @@ namespace HyperionScreenCap
 
         public void Initialize()
         {
+
+            // Create DXGI IDXGIFactory2
+            DXGI.CreateDXGIFactory2(false,out _factory);
+            _factory.EnumAdapters1(_adapterIndex, out _adapter);
+
+            // Create device from Adapter
+            D3D11CreateDevice(_adapter, DriverType.Unknown, DeviceCreationFlags.BgraSupport, s_featureLevels, out _device);
+
+            // Get DXGI.Output
+            _adapter.EnumOutputs(_monitorIndex, out _output);
+            _output5 = _output.QueryInterface<IDXGIOutput5>();
+
+            // Width/Height of desktop to capture
+            var desktopBounds = _output.Description.DesktopCoordinates;
+            _width = desktopBounds.Right - desktopBounds.Left;
+            _height = desktopBounds.Bottom - desktopBounds.Top;
+
+            CaptureWidth = _width / _scalingFactor;
+            CaptureHeight = _height / _scalingFactor;
+            
+            // Initialize duplicator so we can see what the output format is
+            InitDesktopDuplicator();
+
+
+            _minCaptureTime = 1000 / _maxFps;
+            _captureTimer = new Stopwatch();
+            _disposed = false;
+        }
+
+        private void InitDesktopDuplicator()
+        {
+            // We're potentially reinitializing the duplicator, which could change output format
+            // So make sure we reinitialize our textures
+            _stagingTexture?.Dispose();
+            _smallerTexture?.Dispose();
+            _smallerTextureView?.Dispose();
+
+            // Duplicate the output
+            Format[] DesktopFormats = {  Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm };
+            _duplicatedOutput = _output5.DuplicateOutput1(_device, DesktopFormats);
+
+            // Calculate miplevels
             int mipLevels;
             if ( _scalingFactor == 1 )
                 mipLevels = 1;
@@ -114,31 +156,12 @@ namespace HyperionScreenCap
             else
                 throw new Exception("Invalid scaling factor. Allowed valued are 1, 2, 4, etc.");
 
-            // Create DXGI IDXGIFactory2
-            DXGI.CreateDXGIFactory2(false,out _factory);
-            _factory.EnumAdapters1(_adapterIndex, out _adapter);
-
-            // Create device from Adapter
-            D3D11CreateDevice(_adapter, DriverType.Unknown, /*DeviceCreationFlags.BgraSupport*/ DeviceCreationFlags.None, s_featureLevels, out _device);
-
-            // Get DXGI.Output
-            _adapter.EnumOutputs(_monitorIndex, out _output);
-            _output5 = _output.QueryInterface<IDXGIOutput5>();
-
-            // Width/Height of desktop to capture
-            var desktopBounds = _output.Description.DesktopCoordinates;
-            _width = desktopBounds.Right - desktopBounds.Left;
-            _height = desktopBounds.Bottom - desktopBounds.Top;
-
-            CaptureWidth = _width / _scalingFactor;
-            CaptureHeight = _height / _scalingFactor;
-
             // Create Staging texture CPU-accessible
             var stagingTextureDesc = new Texture2DDescription
             {
                 CPUAccessFlags = CpuAccessFlags.Read,
                 BindFlags = BindFlags.None,
-                Format = Format.R16G16B16A16_Float,
+                Format = _duplicatedOutput.Description.ModeDescription.Format,
                 Width = CaptureWidth,
                 Height = CaptureHeight,
                 MiscFlags = ResourceOptionFlags.None,
@@ -154,7 +177,7 @@ namespace HyperionScreenCap
             {
                 CPUAccessFlags = CpuAccessFlags.None,
                 BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
-                Format = Format.R16G16B16A16_Float,
+                Format = _duplicatedOutput.Description.ModeDescription.Format,
                 Width = _width,
                 Height = _height,
                 MiscFlags = ResourceOptionFlags.GenerateMips,
@@ -165,19 +188,6 @@ namespace HyperionScreenCap
             };
             _smallerTexture = _device.CreateTexture2D(smallerTextureDesc);
             _smallerTextureView = _device.CreateShaderResourceView(_smallerTexture);
-
-            _minCaptureTime = 1000 / _maxFps;
-            _captureTimer = new Stopwatch();
-            _disposed = false;
-
-            InitDesktopDuplicator();
-        }
-
-        private void InitDesktopDuplicator()
-        {
-            // Duplicate the output
-            Format[] DesktopFormats = {  Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm };
-            _duplicatedOutput = _output5.DuplicateOutput1(_device, DesktopFormats);
 
             _desktopDuplicatorInvalid = false;
         }
@@ -242,7 +252,7 @@ namespace HyperionScreenCap
 
                 // Get the desktop capture texture
                 MappedSubresource mapSource = _device.ImmediateContext.Map(_stagingTexture, 0, MapMode.Read);
-                _lastCapturedFrame = ToRGBArrayFast(mapSource);
+                _lastCapturedFrame = ToRGBArray(mapSource, _stagingTexture.Description.Format);
                 return _lastCapturedFrame;
             }
             finally
@@ -255,39 +265,7 @@ namespace HyperionScreenCap
             }
         }
 
-        [DllImport("kernel32.dll", EntryPoint = "RtlMoveMemory", SetLastError = false)]
-        static extern void CopyMemory(IntPtr Destination, IntPtr Source, uint Length);
-
-        public static unsafe void MemCopy(IntPtr ptrSource, ulong[] dest, uint elements)
-        {
-            fixed (ulong* ptrDest = &dest[0])
-            {
-                CopyMemory((IntPtr)ptrDest, ptrSource, elements * 8);    // 8 bytes per element
-            }
-        }
-    public static float Parse16BitFloat(byte HI, byte LO)
-        {
-            // Program assumes ints are at least 16 bits
-            int fullFloat = ((HI << 8) | LO);
-            int exponent = (HI & 0b01111110) >> 1; // minor optimisation can be placed here
-            int mant = fullFloat & 0x01FF;
-
-            // Special values
-            if (exponent == 0b00111111) // If using constants, shift right by 1
-            {
-                // Check for non or inf
-                return mant != 0 ? float.NaN :
-                    ((HI & 0x80) == 0 ? float.PositiveInfinity : float.NegativeInfinity);
-            }
-            else // normal/denormal values: pad numbers
-            {
-                exponent = exponent - 31 + 127;
-                mant = mant << 14;
-                Int32 finalFloat = (HI & 0x80) << 24 | (exponent << 23) | mant;
-                return BitConverter.ToSingle(BitConverter.GetBytes(finalFloat), 0);
-            }
-        }
-        public static float Parse16BitFloat2(byte Hi, byte Lo)
+        public static float Parse16BitFloat(byte Hi, byte Lo)
         {
             int fullFloat = ((Hi << 8) | Lo);
             int mant = fullFloat & 0x03ff;            // 10 bits mantissa
@@ -320,113 +298,72 @@ namespace HyperionScreenCap
         /// </summary>
         /// <param name="mapSource"></param>
         /// <returns></returns>
-        private byte[] ToRGBArrayFast(MappedSubresource mapSource)
+        private byte[] ToRGBArray(MappedSubresource mapSource, Format format)
         {
             byte[] bytes = new byte[CaptureWidth * 3 * CaptureHeight];
             int byteIndex = 0;
-            unsafe
+
+            if (format == Format.R16G16B16A16_Float)
             {
-                byte* ptr = (byte*)mapSource.DataPointer;
-                byte* rowptr = ptr;
+                unsafe
+                {
+                    byte* ptr = (byte*)mapSource.DataPointer;
+                    byte* rowptr = ptr;
+                    for (int y = 0; y < CaptureHeight; y++)
+                    {
+                        byte* pixelptr = rowptr;
+                        for (int x = 0; x < CaptureWidth; x++)
+                        {
+                            for (int comp = 0; comp < 3; comp++)
+                            {
+                                byte lo = *pixelptr++;
+                                byte hi = *pixelptr++;
+
+                                // No idea why these values range from 4.6 to 0 instead of 1 to 0
+                                // f(x) = sqrt(x/4.6) seems to approximate what the values should be.
+                                bytes[byteIndex++] = (byte)(MathExt.Clamp(Math.Sqrt(Parse16BitFloat(hi, lo) / 4.6), 0, 1) * 255);
+                            }
+                            pixelptr += 2; //skip alpha
+                        }
+                        rowptr += mapSource.RowPitch;
+                    }
+                }
+            }
+            else if (format == Format.B8G8R8A8_UNorm)
+            {
+                IntPtr sourcePtr = mapSource.DataPointer;
+
                 for ( int y = 0; y < CaptureHeight; y++ )
                 {
-                    byte* pixelptr = rowptr;
-                    for ( int x = 0; x < CaptureWidth; x++ )
+                    Int32[] rowData = new Int32[CaptureWidth];
+                    Marshal.Copy(sourcePtr, rowData, 0, CaptureWidth);
+
+                    foreach ( Int32 pixelData in rowData )
                     {
-                        for (int comp = 0; comp < 3; comp++ )
+                        byte[] values = BitConverter.GetBytes(pixelData);
+                        if ( BitConverter.IsLittleEndian )
                         {
-                            byte lo = *pixelptr++;
-                            byte hi = *pixelptr++;
-                            
-                            // No idea why these values range from 4.6 to 0 instead of 1 to 0
-                            // f(x) = sqrt(x/5) seems to approximate what the values should be.
-                            bytes[byteIndex++] =  (byte)(MathExt.Clamp(Math.Sqrt(Parse16BitFloat2(hi, lo)/4.6), 0, 1) * 255);
+                            // Byte order : bgra
+                            bytes[byteIndex++] = values[2];
+                            bytes[byteIndex++] = values[1];
+                            bytes[byteIndex++] = values[0];
                         }
-                        pixelptr += 2; //skip alpha
+                        else
+                        {
+                            // Byte order : argb
+                            bytes[byteIndex++] = values[1];
+                            bytes[byteIndex++] = values[2];
+                            bytes[byteIndex++] = values[3];
+                        }
                     }
-                    rowptr += mapSource.RowPitch;
+
+                    sourcePtr = IntPtr.Add(sourcePtr, mapSource.RowPitch);
                 }
             }
-            return bytes;
-        }
-
-        private byte[] ToRGBArray(MappedSubresource mapSource)
-        {
-            var sourcePtr = mapSource.DataPointer;
-            byte[] bytes = new byte[CaptureWidth * 3 * CaptureHeight];
-            int byteIndex = 0;
-#if true
-            for ( int y = 0; y < CaptureHeight; y++ )
+            else
             {
-                UInt64[] rowData = new UInt64[CaptureWidth];
-                MemCopy(sourcePtr, rowData, (uint)CaptureWidth);
-
-                foreach (Int64 pixelData in rowData)
-                {
-                    //Func<byte[], int, byte> Convert16bitTo8bit = (byteArray, index) => (byte)(((float)BitConverter.ToUInt16(byteArray, index) / (float)UInt16.MaxValue) * 255);
-                    Func<byte[], int, float, byte> Convert16bitTo8bit = (byteArray, index, scale) =>
-                    {
-                        //float raw = Parse16BitFloat(byteArray[index + 1], byteArray[index]);
-                        //float raw = Ieee11073ToSingle(byteArray[index + 1], byteArray[index]);
-                        float raw = Parse16BitFloat2(byteArray[index + 1], byteArray[index]);
-                        //double raw2 = raw <= 0.0031308 ? raw * 12.92 : 1.055 * Math.Pow(raw, 1.0f / 2.4f) - 0.055f;
-                        //double final = MathExt.Clamp(raw2, 0.0f, 1.0f);
-                        double final = MathExt.Clamp(raw, 0.0f, 1.0f);
-                        return (byte)(final * 255);
-                    };
-                    byte[] values = BitConverter.GetBytes(pixelData);
-                    if ( BitConverter.IsLittleEndian )
-                    {
-                        float alpha = Parse16BitFloat2(values[7], values[6]);
-                        float r = Parse16BitFloat2(values[1], values[0]);
-                        float g = Parse16BitFloat2(values[3], values[2]);
-                        float b = Parse16BitFloat2(values[5], values[4]);
-                        // Byte order : rgba
-                        bytes[byteIndex++] = Convert16bitTo8bit(values, 0, alpha);
-                        bytes[byteIndex++] = Convert16bitTo8bit(values, 2, alpha);
-                        bytes[byteIndex++] = Convert16bitTo8bit(values, 4, alpha);
-                    }
-                    else
-                    {
-                        float alpha = Parse16BitFloat(values[0], values[1]);
-                        // Byte order : abgr
-                        bytes[byteIndex++] = Convert16bitTo8bit(values, 6, alpha);
-                        bytes[byteIndex++] = Convert16bitTo8bit(values, 4, alpha);
-                        bytes[byteIndex++] = Convert16bitTo8bit(values, 2, alpha);
-                    }
-                }
-
-                sourcePtr = IntPtr.Add(sourcePtr, mapSource.RowPitch);
+                throw new NotImplementedException($"Texture format {format.ToString()} is not supported.");
             }
-#else
-            for ( int y = 0; y < CaptureHeight; y++ )
-            {
-                Int32[] rowData = new Int32[CaptureWidth];
-                Marshal.Copy(sourcePtr, rowData, 0, CaptureWidth);
-
-                foreach ( Int32 pixelData in rowData )
-                {
-                    byte[] values = BitConverter.GetBytes(pixelData);
-                    if ( BitConverter.IsLittleEndian )
-                    {
-                        // Byte order : bgra
-                        bytes[byteIndex++] = values[2];
-                        bytes[byteIndex++] = values[1];
-                        bytes[byteIndex++] = values[0];
-                    }
-                    else
-                    {
-                        // Byte order : argb
-                        bytes[byteIndex++] = values[1];
-                        bytes[byteIndex++] = values[2];
-                        bytes[byteIndex++] = values[3];
-                    }
-                }
-
-                sourcePtr = IntPtr.Add(sourcePtr, mapSource.RowPitch);
-            }
-#endif
-
             return bytes;
         }
 
