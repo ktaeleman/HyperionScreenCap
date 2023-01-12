@@ -139,8 +139,10 @@ namespace HyperionScreenCap.Helper
                 try
                 {
                     byte[] imageData = _screenCapture.Capture();
-                    hyperionClient.SendImageData(imageData, _screenCapture.CaptureWidth, _screenCapture.CaptureHeight);
-
+                    if (imageData != null)
+                    {
+                        hyperionClient.SendImageData(imageData, _screenCapture.CaptureWidth, _screenCapture.CaptureHeight);
+                    }
                     // Uncomment the following to enable debugging
                     // MiscUtils.SaveRGBArrayToImageFile(imageData, _screenCapture.CaptureWidth, _screenCapture.CaptureHeight, AppConstants.DEBUG_IMAGE_FILE_NAME);
                 }
