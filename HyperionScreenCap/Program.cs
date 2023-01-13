@@ -50,13 +50,12 @@ namespace HyperionScreenCap
         ///
         private static void SetDpiAwareness()
         {
+            // Get windows version to set the correct dpi awareness context
+            // This is needed for DXGI 1.5 OutputDuplicate1 to work
             var query = "SELECT * FROM Win32_OperatingSystem";
             var searcher = new ManagementObjectSearcher(query);
             var info = searcher.Get().Cast<ManagementObject>().FirstOrDefault();
-//            var caption = info.Properties["Caption"].Value.ToString();
             var version = info.Properties["Version"].Value.ToString();
-//            var spMajorVersion = info.Properties["ServicePackMajorVersion"].Value.ToString();
-//            var spMinorVersion = info.Properties["ServicePackMinorVersion"].Value.ToString();
             Version winVersion = new Version(version);
             // Windows 8.1 added support for per monitor DPI
             if ( winVersion >= new Version(6, 3, 0))
