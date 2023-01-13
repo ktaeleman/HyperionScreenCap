@@ -1,8 +1,7 @@
 ﻿using HyperionScreenCap.Capture;
-using Vortice;
-using Vortice.Direct3D;
-using Vortice.Direct3D11;
-using Vortice.DXGI;
+using SharpDX;
+using SharpDX.Direct3D11;
+using SharpDX.DXGI;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,8 +12,6 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using static Vortice.Direct3D11.D3D11;
-using static Vortice.DXGI.DXGI;
 
 
 
@@ -39,15 +36,24 @@ namespace HyperionScreenCap
         private int _maxFps;
         private int _frameCaptureTimeout;
 
-        private IDXGIFactory2 _factory;
-        private IDXGIAdapter1 _adapter;
-        private IDXGIOutput _output;
-        private IDXGIOutput5 _output5;
-        private ID3D11Device _device;
-        private ID3D11Texture2D _stagingTexture;
-        private ID3D11Texture2D _smallerTexture;
-        private ID3D11ShaderResourceView _smallerTextureView;
-        private IDXGIOutputDuplication _duplicatedOutput;
+        private Factory1 _factory;
+        private Adapter _adapter;
+        private Output _output;
+        private Output5 _output5;
+        private SharpDX.Direct3D11.Device _device;
+        private Texture2D _stagingTexture;
+        private Texture2D _smallerTexture;
+        private ShaderResourceView _smallerTextureView;
+        private OutputDuplication _duplicatedOutput;
+        //private IDXGIFactory2 _factory;
+        //private IDXGIAdapter1 _adapter;
+        //private IDXGIOutput _output;
+        //private IDXGIOutput5 _output5;
+        //private ID3D11Device _device;
+        //private ID3D11Texture2D _stagingTexture;
+        //private ID3D11Texture2D _smallerTexture;
+        //private ID3D11ShaderResourceView _smallerTextureView;
+        //private IDXGIOutputDuplication _duplicatedOutput;
         private int _scalingFactorLog2;
         private int _width;
         private int _height;
@@ -56,10 +62,10 @@ namespace HyperionScreenCap
         private Stopwatch _captureTimer;
         private bool _desktopDuplicatorInvalid;
         private bool _disposed;
-        private static readonly FeatureLevel[] s_featureLevels = new[]
-        {
-            FeatureLevel.Level_11_0
-        };
+        //private static readonly FeatureLevel[] s_featureLevels = new[]
+        //{
+            //FeatureLevel.Level_11_0
+        //};
 
         public int CaptureWidth { get; private set; }
         public int CaptureHeight { get; private set; }
@@ -67,25 +73,22 @@ namespace HyperionScreenCap
         public static String GetAvailableMonitors()
         {
             StringBuilder response = new StringBuilder();
-            IDXGIFactory2 tempFactory = null;
-            DXGI.CreateDXGIFactory2(false,out tempFactory);
-            //using ( IDXGIFactory2 factory = new IDXGIFactory2() )
+            using ( Factory1 factory = new Factory1() )
             {
                 int adapterIndex = 0;
-                while(tempFactory.EnumAdapters(adapterIndex, out IDXGIAdapter adapter) == SharpGen.Runtime.Result.Ok)
+                foreach(Adapter adapter in factory.Adapters)
                 {
                     response.Append($"Adapter Index {adapterIndex++}: {adapter.Description.Description}\n");
                     int outputIndex = 0;
-                    while(adapter.EnumOutputs(outputIndex, out IDXGIOutput output) == SharpGen.Runtime.Result.Ok)
+                    foreach(Output output in adapter.Outputs)
                     {
                         response.Append($"\tMonitor Index {outputIndex++}: {output.Description.DeviceName}");
-                        var desktopBounds = output.Description.DesktopCoordinates;
+                        var desktopBounds = output.Description.DesktopBounds;
                         response.Append($" {desktopBounds.Right - desktopBounds.Left}×{desktopBounds.Bottom - desktopBounds.Top}\n");
                     }
                     response.Append("\n");
                 }
             }
-            tempFactory.Dispose();
             return response.ToString();
         }
 
@@ -102,19 +105,19 @@ namespace HyperionScreenCap
         public void Initialize()
         {
 
-            // Create DXGI IDXGIFactory2
-            DXGI.CreateDXGIFactory2(false,out _factory);
-            _factory.EnumAdapters1(_adapterIndex, out _adapter);
+            // Create DXGI Factory1
+            _factory = new Factory1();
+            _adapter = _factory.GetAdapter1(_adapterIndex);
 
             // Create device from Adapter
-            D3D11CreateDevice(_adapter, DriverType.Unknown, DeviceCreationFlags.BgraSupport, s_featureLevels, out _device);
+            _device = new SharpDX.Direct3D11.Device(_adapter);
 
             // Get DXGI.Output
-            _adapter.EnumOutputs(_monitorIndex, out _output);
-            _output5 = _output.QueryInterface<IDXGIOutput5>();
+            _output = _adapter.GetOutput(_monitorIndex);
+            _output5 = _output.QueryInterface<Output5>();
 
             // Width/Height of desktop to capture
-            var desktopBounds = _output.Description.DesktopCoordinates;
+            var desktopBounds = _output.Description.DesktopBounds;
             _width = desktopBounds.Right - desktopBounds.Left;
             _height = desktopBounds.Bottom - desktopBounds.Top;
 
@@ -140,7 +143,7 @@ namespace HyperionScreenCap
 
             // Duplicate the output
             Format[] DesktopFormats = {  Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm };
-            _duplicatedOutput = _output5.DuplicateOutput1(_device, DesktopFormats);
+            _duplicatedOutput = _output5.DuplicateOutput1(_device, 0, DesktopFormats.Count(), DesktopFormats);
 
             // Calculate miplevels
             int mipLevels;
@@ -159,35 +162,35 @@ namespace HyperionScreenCap
             // Create Staging texture CPU-accessible
             var stagingTextureDesc = new Texture2DDescription
             {
-                CPUAccessFlags = CpuAccessFlags.Read,
+                CpuAccessFlags = CpuAccessFlags.Read,
                 BindFlags = BindFlags.None,
                 Format = _duplicatedOutput.Description.ModeDescription.Format,
                 Width = CaptureWidth,
                 Height = CaptureHeight,
-                MiscFlags = ResourceOptionFlags.None,
+                OptionFlags = ResourceOptionFlags.None,
                 MipLevels = 1,
                 ArraySize = 1,
                 SampleDescription = { Count = 1, Quality = 0 },
                 Usage = ResourceUsage.Staging
             };
-            _stagingTexture = _device.CreateTexture2D(stagingTextureDesc);
+            _stagingTexture = new Texture2D(_device, stagingTextureDesc);
 
             // Create smaller texture to downscale the captured image
             var smallerTextureDesc = new Texture2DDescription
             {
-                CPUAccessFlags = CpuAccessFlags.None,
+                CpuAccessFlags = CpuAccessFlags.None,
                 BindFlags = BindFlags.RenderTarget | BindFlags.ShaderResource,
                 Format = _duplicatedOutput.Description.ModeDescription.Format,
                 Width = _width,
                 Height = _height,
-                MiscFlags = ResourceOptionFlags.GenerateMips,
+                OptionFlags = ResourceOptionFlags.GenerateMipMaps,
                 MipLevels = mipLevels,
                 ArraySize = 1,
                 SampleDescription = { Count = 1, Quality = 0 },
                 Usage = ResourceUsage.Default
             };
-            _smallerTexture = _device.CreateTexture2D(smallerTextureDesc);
-            _smallerTextureView = _device.CreateShaderResourceView(_smallerTexture);
+            _smallerTexture = new Texture2D(_device, smallerTextureDesc);
+            _smallerTextureView = new ShaderResourceView(_device, _smallerTexture);
 
             _desktopDuplicatorInvalid = false;
         }
@@ -209,49 +212,52 @@ namespace HyperionScreenCap
 
         private byte[] ManagedCapture()
         {
-            IDXGIResource screenResource = null;
-            OutduplFrameInfo duplicateFrameInformation;
+            SharpDX.DXGI.Resource screenResource = null;
+            OutputDuplicateFrameInformation duplicateFrameInformation;
 
             try
             {
+                try
                 {
                     // Try to get duplicated frame within given time
-                    SharpGen.Runtime.Result res = _duplicatedOutput.AcquireNextFrame(_frameCaptureTimeout, out duplicateFrameInformation, out screenResource);
+                    _duplicatedOutput.AcquireNextFrame(_frameCaptureTimeout, out duplicateFrameInformation, out screenResource);
 
-                    if ( res == SharpGen.Runtime.Result.WaitTimeout.Code && _lastCapturedFrame != null )
-                        return _lastCapturedFrame;
-
-                    if (res == new SharpGen.Runtime.Result(0x887A0026)) // ACCESS_LOST
-                    {
-                        _desktopDuplicatorInvalid = true;
-                        return null;
-                    }
                     if ( duplicateFrameInformation.LastPresentTime == 0 && _lastCapturedFrame != null )
                         return _lastCapturedFrame;
+                }
+                catch ( SharpDXException ex )
+                {
+                    if ( ex.ResultCode.Code == SharpDX.DXGI.ResultCode.WaitTimeout.Code && _lastCapturedFrame != null )
+                        return _lastCapturedFrame;
+
+                    if ( ex.ResultCode.Code == SharpDX.DXGI.ResultCode.AccessLost.Code )
+                        _desktopDuplicatorInvalid = true;
+
+                    throw ex;
                 }
 
                 // Check if scaling is used
                 if ( CaptureWidth != _width )
                 {
                     // Copy resource into memory that can be accessed by the CPU
-                    using ( var screenTexture2D = screenResource.QueryInterface<ID3D11Texture2D>() )
-                        _device.ImmediateContext.CopySubresourceRegion(_smallerTexture, 0, 0, 0, 0, screenTexture2D, 0);
+                    using ( var screenTexture2D = screenResource.QueryInterface<Texture2D>() )
+                        _device.ImmediateContext.CopySubresourceRegion(screenTexture2D, 0, null, _smallerTexture, 0);
 
                     // Generates the mipmap of the screen
                     _device.ImmediateContext.GenerateMips(_smallerTextureView);
 
                     // Copy the mipmap of smallerTexture (size/ scalingFactor) to the staging texture: 1 for /2, 2 for /4...etc
-                    _device.ImmediateContext.CopySubresourceRegion(_stagingTexture, 0, 0, 0, 0, _smallerTexture, _scalingFactorLog2);
+                    _device.ImmediateContext.CopySubresourceRegion(_smallerTexture, _scalingFactorLog2, null, _stagingTexture, 0);
                 }
                 else
                 {
                     // Copy resource into memory that can be accessed by the CPU
-                    using ( var screenTexture2D = screenResource.QueryInterface<ID3D11Texture2D>() )
+                    using ( var screenTexture2D = screenResource.QueryInterface<Texture2D>() )
                         _device.ImmediateContext.CopyResource(screenTexture2D, _stagingTexture);
                 }
 
                 // Get the desktop capture texture
-                MappedSubresource mapSource = _device.ImmediateContext.Map(_stagingTexture, 0, MapMode.Read);
+                var mapSource = _device.ImmediateContext.MapSubresource(_stagingTexture, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
                 _lastCapturedFrame = ToRGBArray(mapSource, _stagingTexture.Description.Format);
                 return _lastCapturedFrame;
             }
@@ -259,7 +265,7 @@ namespace HyperionScreenCap
             {
                 screenResource?.Dispose();
                 // Fixed OUT_OF_MEMORY issue on AMD Radeon cards. Ignoring all exceptions during unmapping.
-                try { _device.ImmediateContext.Unmap(_stagingTexture, 0); } catch { };
+                try { _device.ImmediateContext.UnmapSubresource(_stagingTexture, 0); } catch { };
                 // Ignore DXGI_ERROR_INVALID_CALL, DXGI_ERROR_ACCESS_LOST errors since capture is already complete
                 try { _duplicatedOutput.ReleaseFrame(); } catch { }
             }
@@ -298,7 +304,7 @@ namespace HyperionScreenCap
         /// </summary>
         /// <param name="mapSource"></param>
         /// <returns></returns>
-        private byte[] ToRGBArray(MappedSubresource mapSource, Format format)
+        private byte[] ToRGBArray(DataBox mapSource, Format format)
         {
             byte[] bytes = new byte[CaptureWidth * 3 * CaptureHeight];
             int byteIndex = 0;
