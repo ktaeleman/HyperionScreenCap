@@ -273,6 +273,8 @@ namespace HyperionScreenCap
 
         public static float Parse16BitFloat(byte Hi, byte Lo)
         {
+            // From https://stackoverflow.com/questions/6162651/half-precision-floating-point-in-java/6162687#6162687
+
             int fullFloat = ((Hi << 8) | Lo);
             int mant = fullFloat & 0x03ff;            // 10 bits mantissa
             int exp =  fullFloat & 0x7c00;            // 5 bits exponent
