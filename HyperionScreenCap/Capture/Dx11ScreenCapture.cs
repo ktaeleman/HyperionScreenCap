@@ -142,7 +142,7 @@ namespace HyperionScreenCap
             _smallerTextureView?.Dispose();
 
             // Duplicate the output
-            Format[] DesktopFormats = {  Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm };
+            Format[] DesktopFormats = {  Format.R16G16B16A16_Float, Format.B8G8R8A8_UNorm, Format.R10G10B10A2_UNorm};
             _duplicatedOutput = _output5.DuplicateOutput1(_device, 0, DesktopFormats.Count(), DesktopFormats);
 
             // Calculate miplevels
