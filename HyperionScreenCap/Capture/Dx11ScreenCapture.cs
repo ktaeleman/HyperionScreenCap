@@ -368,6 +368,43 @@ namespace HyperionScreenCap
                     sourcePtr = IntPtr.Add(sourcePtr, mapSource.RowPitch);
                 }
             }
+            else if (format == Format.R10G10B10A2_UNorm)
+            {
+                IntPtr sourcePtr = mapSource.DataPointer;
+
+                for ( int y = 0; y < CaptureHeight; y++ )
+                {
+                    Int32[] rowData = new Int32[CaptureWidth];
+                    Marshal.Copy(sourcePtr, rowData, 0, CaptureWidth);
+
+                    // From http://threadlocalmutex.com/?page_id=60, 10bit to 8bit conversion: (x * 1021 + 2048) >> 12
+                    Func<Int32, byte> convert10bitTo8bit = (x) => (byte)MathExt.Clamp((x * 1021 + 2048) >> 12, 0, 255);
+
+                    foreach ( Int32 pixelData in rowData )
+                    {
+                        Int32 r = pixelData & 0x3FF;
+                        Int32 b = (pixelData >> 10) & 0x3FF;
+                        Int32 g = (pixelData >> 20) & 0x3FF;
+
+                        if ( BitConverter.IsLittleEndian )
+                        {
+                            // Byte order : bgra
+                            bytes[byteIndex++] = convert10bitTo8bit(b);
+                            bytes[byteIndex++] = convert10bitTo8bit(g);
+                            bytes[byteIndex++] = convert10bitTo8bit(r);
+                        }
+                        else
+                        {
+                            // Byte order : argb
+                            bytes[byteIndex++] = convert10bitTo8bit(r);
+                            bytes[byteIndex++] = convert10bitTo8bit(g);
+                            bytes[byteIndex++] = convert10bitTo8bit(b);
+                        }
+                    }
+
+                    sourcePtr = IntPtr.Add(sourcePtr, mapSource.RowPitch);
+                }
+            }
             else
             {
                 throw new NotImplementedException($"Texture format {format.ToString()} is not supported.");
