@@ -383,23 +383,12 @@ namespace HyperionScreenCap
                     foreach ( Int32 pixelData in rowData )
                     {
                         Int32 r = pixelData & 0x3FF;
-                        Int32 b = (pixelData >> 10) & 0x3FF;
-                        Int32 g = (pixelData >> 20) & 0x3FF;
+                        Int32 g = (pixelData >> 10) & 0x3FF;
+                        Int32 b = (pixelData >> 20) & 0x3FF;
 
-                        if ( BitConverter.IsLittleEndian )
-                        {
-                            // Byte order : bgra
-                            bytes[byteIndex++] = convert10bitTo8bit(b);
-                            bytes[byteIndex++] = convert10bitTo8bit(g);
-                            bytes[byteIndex++] = convert10bitTo8bit(r);
-                        }
-                        else
-                        {
-                            // Byte order : argb
-                            bytes[byteIndex++] = convert10bitTo8bit(r);
-                            bytes[byteIndex++] = convert10bitTo8bit(g);
-                            bytes[byteIndex++] = convert10bitTo8bit(b);
-                        }
+                        bytes[byteIndex++] = convert10bitTo8bit(r);
+                        bytes[byteIndex++] = convert10bitTo8bit(g);
+                        bytes[byteIndex++] = convert10bitTo8bit(b);
                     }
 
                     sourcePtr = IntPtr.Add(sourcePtr, mapSource.RowPitch);
